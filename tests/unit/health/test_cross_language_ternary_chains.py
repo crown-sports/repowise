@@ -18,6 +18,7 @@ _LANGUAGES = [
     ("csharp", "F.cs", "class F { int f(bool a, bool b, bool c) {", "} }"),
     ("dart", "f.dart", "int f(bool a, bool b, bool c) {", "}"),
     ("objectivec", "f.m", "int f(int a, int b, int c) {", "}"),
+    ("php", "f.php", "<?php function f($a, $b, $c) {", "}"),
 ]
 
 
