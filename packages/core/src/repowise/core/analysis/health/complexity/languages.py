@@ -548,6 +548,7 @@ _JAVA = LanguageNodeMap(
     function_kinds=frozenset({"method_declaration", "constructor_declaration"}),
     lambda_kinds=frozenset({"lambda_expression"}),
     branch_kinds=frozenset({"if_statement", "ternary_expression"}),
+    flat_ternary_kinds=frozenset({"ternary_expression"}),
     loop_kinds=frozenset(
         {
             "for_statement",
