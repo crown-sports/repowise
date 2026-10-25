@@ -17,6 +17,7 @@ _LANGUAGES = [
     ("cpp", "f.cpp", "int f(bool a, bool b, bool c) {", "}"),
     ("csharp", "F.cs", "class F { int f(bool a, bool b, bool c) {", "} }"),
     ("dart", "f.dart", "int f(bool a, bool b, bool c) {", "}"),
+    ("objectivec", "f.m", "int f(int a, int b, int c) {", "}"),
 ]
 
 
