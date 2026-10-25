@@ -895,6 +895,7 @@ _CPP = LanguageNodeMap(
     function_kinds=frozenset({"function_definition"}),
     lambda_kinds=frozenset({"lambda_expression"}),
     branch_kinds=frozenset({"if_statement", "conditional_expression"}),
+    flat_ternary_kinds=frozenset({"conditional_expression"}),
     loop_kinds=frozenset({"for_statement", "while_statement", "do_statement", "for_range_loop"}),
     try_kinds=frozenset({"try_statement"}),
     catch_kinds=frozenset({"catch_clause"}),
