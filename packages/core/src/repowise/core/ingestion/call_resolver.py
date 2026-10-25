@@ -83,6 +83,7 @@ from .call_receiver_typing import (
 )
 from .decorator_names import is_property_accessor
 from .lang_helpers.anonymous_classes import is_anonymous_member
+from .lang_helpers.python import is_nested_function
 from .language_data import (
     get_builtin_methods,
     get_builtin_types,
@@ -359,6 +360,8 @@ class CallResolver(
 
         # Global symbol index: {name: [symbol_ids]} — for Tier 3
         self._global_symbols: dict[str, list[str]] = defaultdict(list)
+        # Lexical closures are neither module exports nor receiver methods.
+        self._python_nested: dict[tuple[str, str], str] = {}
 
         # Overload sets whose members have their own ids. Every index above
         # holds a set by its representative, the first declared member, so the
@@ -520,6 +523,10 @@ class CallResolver(
         for sym in parsed.symbols:
             # An overload set is indexed once, under its representative.
             index_id = representatives.get(sym.id, sym.id)
+            if is_nested_function(sym):
+                self._python_nested[(f"{path}::{sym.parent_name}", sym.name)] = index_id
+                self._record_callability(path, sym, index_id)
+                continue
             decl_key = (sym.parent_name, sym.name)
             if sym.is_declaration:
                 # A Go interface method spec is not a prototype: its body is
@@ -1423,6 +1430,9 @@ class CallResolver(
         # Every tier keys on the target name, so a name the repo declares
         # nowhere can only be matched under an import alias (2a below).
         declared = target_name in self._global_symbols
+        handled, nested = self._python_nested_call(file_path, call, caller_id)
+        if handled:
+            return nested
         # A parameter or local of that name hides every tier below.
         if self._shadowed_by_local(file_path, call, caller_id):
             return None
@@ -1476,6 +1486,33 @@ class CallResolver(
             or self._merged_import_call(file_path, call, caller_id)
             or self._repo_wide_free_call(file_path, call, caller_id)
         )
+
+    def _python_nested_call(
+        self, file_path: str, call: CallSite, caller_id: str
+    ) -> tuple[bool, ResolvedCall | None]:
+        """A bare Python name in the caller's lexical functions, innermost first."""
+        if self._language_of(file_path) != "python" or call.receiver_name:
+            return False, None
+        scope_id = caller_id
+        chains = self._scope_chains(file_path, "python")
+        while (scope := self._symbols_by_id.get(scope_id)) is not None:
+            if scope.kind not in _FUNCTION_KINDS:
+                break
+            scopes = chains.get(scope_id, ())
+            if scopes and call.target_name in scopes[0].escaped:
+                break  # ``global`` deliberately bypasses enclosing functions.
+            if scopes and call.target_name in scopes[0].first_bound:
+                return True, None  # this scope rebinds it to an unread value
+            target = self._python_nested.get((scope_id, call.target_name))
+            if target is not None:
+                return True, (
+                    None if target == caller_id else
+                    ResolvedCall(caller_id, target, 0.95, call.line, "same_file")
+                )
+            if not is_nested_function(scope):
+                break
+            scope_id = f"{file_path}::{scope.parent_name}"
+        return False, None
 
     def _first_strategy_hit(
         self,
@@ -1717,6 +1754,10 @@ class CallResolver(
         method_name = call.target_name
         assert receiver_name is not None
 
+        handled, hit = self._python_local_self_call(file_path, call, caller_id)
+        if handled:
+            return True, hit
+
         hit = self._first_strategy_hit(
             self._strategies_for(file_path).constructor, file_path, call, caller_id
         )
@@ -1776,6 +1817,38 @@ class CallResolver(
             # The method is the external type's: refused, not left to a name match.
             return True, None
         return hit is not None, hit
+
+    def _python_local_self_call(
+        self, file_path: str, call: CallSite, caller_id: str
+    ) -> tuple[bool, ResolvedCall | None]:
+        """A closure's own ``self`` binding cannot name its enclosing instance."""
+        receiver = call.receiver_name or ""
+        if self._language_of(file_path) != "python" or (
+            receiver != "self" and not receiver.startswith("self.")
+        ):
+            return False, None
+        chains = self._scope_chains(file_path, "python")
+        scope_id = caller_id
+        while (symbol := self._symbols_by_id.get(scope_id)) is not None and is_nested_function(symbol):
+            own = chains[scope_id][0]
+            if "self" in own.escaped:
+                return True, None
+            if "self" in own.first_bound:
+                # An unread local type is a refusal, including for a chained
+                # receiver; do not fall back to a same-named class method.
+                if receiver != "self":
+                    return True, None
+                type_name, _, typing_file = self._receiver_type_and_scope(
+                    file_path, caller_id, "python", "self", call.line
+                )
+                if type_name is None:
+                    return True, None
+                if "::" in type_name:
+                    return True, self._call_typed_receiver(file_path, call, caller_id, type_name)
+                found = self._typed_receiver_target(typing_file, call, caller_id, type_name)
+                return True, self._body_typed_call(caller_id, *found, call.line) if found else None
+            scope_id = f"{file_path}::{symbol.parent_name}"
+        return False, None
 
     def _go_receiver_is_variable(self, file_path: str, call: CallSite, caller_id: str) -> bool:
         """Whether a Go call's receiver is a typed local, parameter or ``var`` of the caller."""
@@ -1910,6 +1983,10 @@ class CallResolver(
         if not self._is_self_receiver(file_path, call.receiver_name):
             return None
         caller_class = _extract_class_from_symbol_id(caller_id)
+        if self._language_of(file_path) == "python":
+            enclosing_class = self._symbols_by_id.get(self._caller_class_id(caller_id))
+            if enclosing_class is not None:
+                caller_class = enclosing_class.name
         if not caller_class:
             return None
         sym_id = self._file_methods.get(file_path, {}).get(
