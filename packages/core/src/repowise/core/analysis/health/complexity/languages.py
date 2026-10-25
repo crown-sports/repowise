@@ -1017,6 +1017,7 @@ _CSHARP = LanguageNodeMap(
     ),
     lambda_kinds=frozenset({"lambda_expression"}),
     branch_kinds=frozenset({"if_statement", "conditional_expression"}),
+    flat_ternary_kinds=frozenset({"conditional_expression"}),
     loop_kinds=frozenset({"for_statement", "while_statement", "foreach_statement", "do_statement"}),
     try_kinds=frozenset({"try_statement"}),
     catch_kinds=frozenset({"catch_clause"}),
