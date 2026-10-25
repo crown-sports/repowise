@@ -857,6 +857,7 @@ _DART = LanguageNodeMap(
     # ``if_element`` is the collection-literal ``if`` (``[if (x) y]``);
     # ``conditional_expression`` is the ternary.
     branch_kinds=frozenset({"if_statement", "conditional_expression", "if_element"}),
+    flat_ternary_kinds=frozenset({"conditional_expression"}),
     loop_kinds=frozenset({"for_statement", "while_statement", "do_statement", "for_element"}),
     try_kinds=frozenset({"try_statement"}),
     # A bare ``on FormatException {}`` arm without ``catch`` has no
