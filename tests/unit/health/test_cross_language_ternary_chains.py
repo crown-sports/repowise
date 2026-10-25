@@ -13,6 +13,7 @@ from repowise.core.ingestion.parser import _get_language
 
 _LANGUAGES = [
     ("java", "F.java", "class F { int f(boolean a, boolean b, boolean c) {", "} }"),
+    ("c", "f.c", "int f(int a, int b, int c) {", "}"),
 ]
 
 
