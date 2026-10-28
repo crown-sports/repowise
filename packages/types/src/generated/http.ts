@@ -1615,6 +1615,7 @@ export interface DecisionRecordResponse {
   accepter_kind?: string | null;
   accepter_session?: string | null;
   blockers?: string[] | null;
+  decision_text_missing?: boolean;
 }
 
 /** The resolved decision capture policy for one repository. */
@@ -3402,6 +3403,12 @@ export interface PeriodHealthSummaryResponse {
   net_findings: number;
 }
 
+/** Result of pinning a file's doc (issue #812). */
+export interface PinDocResponse {
+  file_path: string;
+  pinned: boolean;
+}
+
 /** A function's stored size measures; an absent one was not measured. */
 export interface PlanMeasuresResponse {
   ccn?: number | null;
@@ -3462,7 +3469,7 @@ export interface ProviderEntry {
   local_model?: boolean;
   env_vars?: string[];
   setup_hint?: string;
-  detected?: "signed_in" | "env" | "saved" | null;
+  detected?: "signed_in" | "installed" | "env" | "saved" | null;
 }
 
 export interface ProviderModelEntry {
@@ -4643,6 +4650,14 @@ export interface WorkspaceCoChangeEntry {
   strength: number;
   frequency: number;
   last_date: string;
+  evidence?: WorkspaceCoChangeEvidence | null;
+}
+
+/** Bounded supporting evidence for one co-change pair (#483). */
+export interface WorkspaceCoChangeEvidence {
+  authors?: string[];
+  commit_pairs?: Record<string, unknown>[];
+  max_gap_hours?: number;
 }
 
 /** What declared structure connects one co-changing file pair. */

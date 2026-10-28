@@ -455,6 +455,140 @@ class TestFieldTypedReceiver:
         )
         assert not [e for e in _edges(parsed, tmp_path) if e[3].startswith("receiver_field_")]
 
+    @pytest.mark.parametrize(
+        "member",
+        [
+            "public Box Rules { get; } = new Box();",
+            "public Box Rules => _box;",
+            "private readonly Box Rules;",
+        ],
+    )
+    def test_a_csharp_pascal_case_member_types_its_receiver(
+        self, tmp_path: Path, member: str
+    ) -> None:
+        """``Rules.Add(1)``: no type is named ``Rules``, so the property is the receiver."""
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "V.cs": (
+                    "csharp",
+                    f"class V\n{{\n    {member}\n    void Run() {{ Rules.Add(1); }}\n}}\n",
+                ),
+                "Box.cs": ("csharp", "public class Box\n{\n    public void Add(int x) { }\n}\n"),
+            },
+        )
+        assert ("V.cs::V::Run", "Box.cs::Box::Add", 0.75, "receiver_field_global") in _edges(
+            parsed, tmp_path
+        )
+
+    def test_a_csharp_type_of_the_receiver_s_name_still_wins(self, tmp_path: Path) -> None:
+        """A static ``Rules.Add`` the repo declares is read before the property."""
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "V.cs": (
+                    "csharp",
+                    "class V\n{\n    public Box Rules { get; }\n"
+                    "    void Run() { Rules.Add(1); }\n}\n",
+                ),
+                "Box.cs": ("csharp", "public class Box\n{\n    public void Add(int x) { }\n}\n"),
+                "Rules.cs": (
+                    "csharp",
+                    "public static class Rules\n{\n    public static void Add(int x) { }\n}\n",
+                ),
+            },
+        )
+        callees = {e[1] for e in _edges(parsed, tmp_path) if e[0] == "V.cs::V::Run"}
+        assert callees == {"Rules.cs::Rules::Add"}
+
+    def test_a_csharp_property_an_ancestor_declares(self, tmp_path: Path) -> None:
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "V.cs": ("csharp", "class V : Base\n{\n    void Run() { Rules.Add(1); }\n}\n"),
+                "Base.cs": (
+                    "csharp",
+                    "abstract class Base\n{\n    protected Box Rules { get; set; }\n}\n",
+                ),
+                "Box.cs": ("csharp", "public class Box\n{\n    public void Add(int x) { }\n}\n"),
+            },
+        )
+        resolver = CallResolver(
+            parsed,
+            {p: set() for p in parsed},
+            repo_path=str(tmp_path),
+            heritage_parents={"V.cs::V": {"Base.cs::Base"}},
+        )
+        edges = [
+            (rc.callee_id, rc.origin) for rc in resolver.resolve_file("V.cs", parsed["V.cs"].calls)
+        ]
+        assert edges == [("Box.cs::Box::Add", "receiver_field_global")]
+
+    def test_a_capitalised_receiver_no_member_names_gets_no_edge(self, tmp_path: Path) -> None:
+        """``Console.WriteLine`` is the BCL's, whatever repo class has a ``WriteLine``."""
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "V.cs": ("csharp", "class V\n{\n    void Run() { Console.WriteLine(1); }\n}\n"),
+                "Box.cs": ("csharp", "public class Box\n{\n    public void WriteLine(int x) { }\n}\n"),
+            },
+        )
+        assert not [e for e in _edges(parsed, tmp_path) if e[0] == "V.cs::V::Run"]
+
+    @pytest.mark.parametrize(
+        "holder",
+        [
+            "void Run()\n    {\n        Result Check = Compute();\n    }",
+            "public int P\n    {\n        get\n        {\n            Result Check = Compute();\n"
+            "            return 1;\n        }\n    }",
+            "Action A = () =>\n    {\n        Result Check = Compute();\n    };",
+        ],
+        ids=["method", "accessor", "lambda"],
+    )
+    def test_a_csharp_body_local_types_no_receiver_elsewhere(
+        self, tmp_path: Path, holder: str
+    ) -> None:
+        """``Result Check = ..`` inside a body is that body's local, not a field."""
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "V.cs": ("csharp", f"class V\n{{\n    {holder}\n    void Other() {{ Check.Go(); }}\n}}\n"),
+                "Result.cs": ("csharp", "public class Result\n{\n    public void Go() { }\n}\n"),
+            },
+        )
+        assert not [e for e in _edges(parsed, tmp_path) if e[1] == "Result.cs::Result::Go"]
+
+    def test_a_csharp_field_beside_an_accessor_local_still_types(self, tmp_path: Path) -> None:
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "V.cs": (
+                    "csharp",
+                    "namespace N\n{\n    record V\n    {\n        Result Check = Compute();\n"
+                    "        public int P { get { Other Check = null; return 1; } }\n"
+                    "        void Run() { Check.Go(); }\n    }\n}\n",
+                ),
+                "Result.cs": ("csharp", "public class Result\n{\n    public void Go() { }\n}\n"),
+            },
+        )
+        assert [e[0] for e in _edges(parsed, tmp_path) if e[1] == "Result.cs::Result::Go"] == [
+            "V.cs::V::Run"
+        ]
+
+    def test_a_capitalised_parameter_shadows_the_property(self, tmp_path: Path) -> None:
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "V.cs": (
+                    "csharp",
+                    "class V\n{\n    public Box Rules { get; }\n"
+                    "    void Run(Other Rules) { Rules.Add(1); }\n}\n",
+                ),
+                "Box.cs": ("csharp", "public class Box\n{\n    public void Add(int x) { }\n}\n"),
+            },
+        )
+        assert not [e for e in _edges(parsed, tmp_path) if e[1] == "Box.cs::Box::Add"]
+
     def test_a_kotlin_constructor_property_types_its_receiver(self, tmp_path: Path) -> None:
         """Hilt's `@Inject constructor(private val api: Api)`, read bare and through `this`."""
         parsed = _parse_all(
@@ -1771,6 +1905,80 @@ class TestJavaMemberTypes:
             assert callees == ["c/Inner.java::Inner::y", "c/Inner.java::Inner::z"]
 
 
+class TestJavaQualifiedTypeReceiver:
+    """``B.Create.make()`` is ``B``'s nested ``Create``, though ``A`` nests one too."""
+
+    @staticmethod
+    def _outer(name: str, extra: str = "") -> str:
+        return (
+            f"package p;\npublic interface {name} {{\n    class Create {{\n"
+            "        public static Create make() { return null; }\n"
+            f"        public void run() {{}}\n{extra}    }}\n}}\n"
+        )
+
+    def _targets(self, tmp_path: Path, body: str, imports: str) -> list[tuple[str, str]]:
+        files = {
+            "p/A.java": self._outer("A", "        public void onlyInA() {}\n"),
+            "p/B.java": self._outer("B"),
+            "u/Use.java": f"package u;\n{imports}class Use {{\n    void go() {{\n"
+            f"        {body}\n    }}\n}}\n",
+        }
+        parsed = _parse_all(tmp_path, {k: ("java", v) for k, v in files.items()})
+        _link_imports(parsed, {"u/Use.java": {"p.A": "p/A.java", "p.B": "p/B.java"}})
+        imported = {"u/Use.java": {"p/A.java", "p/B.java"}, "p/A.java": set(), "p/B.java": set()}
+        resolver = CallResolver(parsed, imported, repo_path=str(tmp_path))
+        calls = parsed["u/Use.java"].calls
+        return sorted((rc.callee_id, rc.origin) for rc in resolver.resolve_file("u/Use.java", calls))
+
+    @pytest.mark.parametrize(
+        "imports", ["import p.A;\nimport p.B;\n", "import p.B;\nimport p.A;\n"], ids=["ab", "ba"]
+    )
+    def test_the_whole_path_names_the_type(self, tmp_path: Path, imports: str) -> None:
+        assert self._targets(tmp_path, "B.Create.make();", imports) == [
+            ("p/B.java::Create::make", "receiver_import")
+        ]
+
+    def test_a_chain_types_its_head_by_the_whole_path(self, tmp_path: Path) -> None:
+        imports = "import p.A;\nimport p.B;\n"
+        assert self._targets(tmp_path, "B.Create.make().run();", imports) == [
+            ("p/B.java::Create::make", "receiver_import"),
+            ("p/B.java::Create::run", "return_type_import"),
+        ]
+
+    def test_a_type_that_lacks_the_method_answers_nothing(self, tmp_path: Path) -> None:
+        """Only ``A.Create`` declares ``onlyInA``; the last segment alone would bind it."""
+        assert self._targets(tmp_path, "B.Create.onlyInA();", "import p.A;\nimport p.B;\n") == []
+
+    @pytest.mark.parametrize("receiver", ["X.CONST", "a.b", "X.inner"])
+    def test_a_path_that_is_not_a_member_type_stays_bare(
+        self, tmp_path: Path, receiver: str
+    ) -> None:
+        source = f"class Use {{\n    void go() {{\n        {receiver}.m();\n    }}\n}}\n"
+        parsed = _parse_all(tmp_path, {"Use.java": ("java", source)})
+        assert [c.receiver_name for c in parsed["Use.java"].calls] == [None]
+
+    def test_a_path_written_across_lines_is_read_whole(self, tmp_path: Path) -> None:
+        body = "B\n            .Create\n            .make()\n            .run();"
+        assert self._targets(tmp_path, body, "import p.A;\nimport p.B;\n") == [
+            ("p/B.java::Create::make", "receiver_import"),
+            ("p/B.java::Create::run", "return_type_import"),
+        ]
+
+    def test_a_path_naming_no_type_keeps_its_bare_reading(self, tmp_path: Path) -> None:
+        """``Color.Red`` is an enum constant: ``m`` binds as it did before the path was read."""
+        files = {
+            "p/Color.java": "package p;\npublic enum Color {\n    Red;\n    public void m() {}\n}\n",
+            "p/Use.java": "package p;\nclass Use {\n    void go() {\n        Color.Red.m();\n    }\n}\n",
+        }
+        parsed = _parse_all(tmp_path, {k: ("java", v) for k, v in files.items()})
+        resolver = CallResolver(parsed, {k: set() for k in parsed}, repo_path=str(tmp_path))
+        calls = parsed["p/Use.java"].calls
+        assert [c.receiver_name for c in calls] == ["Color.Red"]
+        assert [rc.callee_id for rc in resolver.resolve_file("p/Use.java", calls)] == [
+            "p/Color.java::Color::m"
+        ]
+
+
 class TestOwnerAwareModuleTier:
     """The module and import-name tiers pick an owner, not just a file.
 
@@ -2245,6 +2453,35 @@ class TestExternalReceiverType:
         assert [d.type_name for d in scan_declarations("List<Foo> xs;\n", "java")] == [
             "external:List"
         ]
+
+
+class TestPythonRebindingOfADefinition:
+    """``Factory = deco(Factory)`` rebinds the class; it is not a second symbol."""
+
+    def test_a_rebound_class_keeps_its_own_symbol(self, tmp_path: Path) -> None:
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "mod.py": (
+                    "python",
+                    "def deco(cls):\n    return cls\n\n"
+                    "class Factory:\n    pass\n\n"
+                    "Factory = deco(Factory)\n\n"
+                    "def use_it():\n    Factory()\n",
+                )
+            },
+        )
+        factories = [s for s in parsed["mod.py"].symbols if s.name == "Factory"]
+        assert [(s.kind, s.start_line) for s in factories] == [("class", 4)]
+        assert ("mod.py::use_it", "mod.py::Factory", 0.95, "same_file") in _edges(
+            parsed, tmp_path
+        )
+
+    def test_an_assignment_with_no_definition_stays_a_symbol(self, tmp_path: Path) -> None:
+        parsed = _parse_all(tmp_path, {"mod.py": ("python", "handler = make()\n")})
+        assert [s.kind for s in parsed["mod.py"].symbols] == ["variable"]
+
+
 class TestPythonNameAliasAssignment:
     """A plain-name alias must redirect onto the real definition, not its own line (#2791)."""
 
@@ -2435,6 +2672,108 @@ class TestPythonNameAliasAssignment:
 
         assert len(attributes_symbols) == 2
         assert len({symbol.id for symbol in attributes_symbols}) == 2
+
+    def _imported_alias_repo(self, tmp_path: Path, alias_line: str) -> dict[str, ParsedFile]:
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "pkg/_make.py": ("python", "def attrs():\n    pass\n"),
+                "pkg/__init__.py": (
+                    "python",
+                    f"from pkg._make import attrs\n\n{alias_line}\n",
+                ),
+                "app.py": (
+                    "python",
+                    "import pkg\nfrom pkg import s\n\n"
+                    "def via_module():\n    pkg.s()\n\n"
+                    "def via_name():\n    s()\n",
+                ),
+            },
+        )
+        _link_imports(
+            parsed,
+            {
+                "app.py": {"pkg": "pkg/__init__.py"},
+                "pkg/__init__.py": {"pkg._make": "pkg/_make.py"},
+            },
+        )
+        return parsed
+
+    def _app_edges(self, parsed: dict[str, ParsedFile], tmp_path: Path) -> set[tuple[str, str]]:
+        return {
+            (caller, callee)
+            for caller, callee, _, _ in _edges(parsed, tmp_path)
+            if caller.startswith("app.py")
+        }
+
+    def test_an_alias_of_an_imported_name_resolves_to_its_definition(
+        self, tmp_path: Path
+    ) -> None:
+        """``s = attributes = attrs`` re-exports an imported def under new names."""
+        parsed = self._imported_alias_repo(tmp_path, "s = attributes = attrs")
+        assert self._app_edges(parsed, tmp_path) == {
+            ("app.py::via_module", "pkg/_make.py::attrs"),
+            ("app.py::via_name", "pkg/_make.py::attrs"),
+        }
+
+    def test_a_class_level_alias_of_an_imported_name_is_not_linked(
+        self, tmp_path: Path
+    ) -> None:
+        """Only a module-level alias is linked; ``class C: s = attrs`` is left alone."""
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "pkg/_make.py": ("python", "def attrs():\n    pass\n"),
+                "pkg/__init__.py": (
+                    "python",
+                    "from pkg._make import attrs\n\nclass C:\n    s = attrs\n",
+                ),
+                "app.py": ("python", "from pkg import C\n\ndef run():\n    C.s()\n"),
+            },
+        )
+        _link_imports(
+            parsed,
+            {
+                "app.py": {"pkg": "pkg/__init__.py"},
+                "pkg/__init__.py": {"pkg._make": "pkg/_make.py"},
+            },
+        )
+        assert ("app.py::run", "pkg/_make.py::attrs") not in self._app_edges(parsed, tmp_path)
+
+    def test_an_alias_of_a_renamed_import_resolves_to_its_definition(
+        self, tmp_path: Path
+    ) -> None:
+        parsed = self._imported_alias_repo(
+            tmp_path, "from pkg._make import attrs as _attrs\ns = _attrs"
+        )
+        assert ("app.py::via_name", "pkg/_make.py::attrs") in self._app_edges(parsed, tmp_path)
+
+    def test_a_value_built_from_an_imported_name_is_not_an_alias(
+        self, tmp_path: Path
+    ) -> None:
+        parsed = self._imported_alias_repo(tmp_path, "s = attrs()")
+        assert self._app_edges(parsed, tmp_path) == {
+            ("app.py::via_module", "pkg/__init__.py::s"),
+            ("app.py::via_name", "pkg/__init__.py::s"),
+        }
+
+    def test_an_alias_of_an_imported_module_is_left_alone(self, tmp_path: Path) -> None:
+        parsed = _parse_all(
+            tmp_path,
+            {
+                "pkg/helpers.py": ("python", "def helpers():\n    pass\n"),
+                "pkg/__init__.py": ("python", "import pkg.helpers as helpers\n\ns = helpers\n"),
+                "app.py": ("python", "import pkg\n\ndef run():\n    pkg.s()\n"),
+            },
+        )
+        _link_imports(
+            parsed,
+            {
+                "app.py": {"pkg": "pkg/__init__.py"},
+                "pkg/__init__.py": {"pkg.helpers": "pkg/helpers.py"},
+            },
+        )
+        assert ("app.py::run", "pkg/helpers.py::helpers") not in self._app_edges(parsed, tmp_path)
 
 
 _JS_TS = [("javascript", "js"), ("typescript", "ts")]

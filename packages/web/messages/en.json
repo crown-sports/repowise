@@ -481,7 +481,7 @@
       "gotWorse": "Got worse",
       "gotWorseDescription": "Findings this change introduced or made more severe, worst first.",
       "gotWorseShown": "Showing the {shown} most severe of {total}.",
-      "promptAction": "Copy prompt for your agent",
+      "promptAction": "Copy prompt",
       "promptTitle": "Prompt for this change",
       "promptDescription": "Hands your agent what this change made worse, with files and lines, or what its checklist flagged when nothing got worse.",
       "checksPassed": "{count, plural, one {# check passed} other {# checks passed}}",
@@ -536,7 +536,7 @@
       "coChangeNoticeTitle": "Health scores changed in this release.",
       "coChangeNoticeMore": "What changed",
       "coChangeNoticeLess": "Hide",
-      "coChangeNoticeBody": "Some files now count as a different kind of code. A tools/ folder below the repo root is product code, so it is scored; only a root-level or engineering tools/ folder stays tooling. Python _vendor/ folders and Salesforce static-resource libraries count as vendored code, and prefixed migration folders under db/ count as migrations, so they leave the score. Repos with those folders can move either way; other repos keep their scores.",
+      "coChangeNoticeBody": "Some files now count as a different kind of code. A tools/ folder below the repo root is product code, so it is scored; only a root-level or engineering tools/ folder stays tooling. Python _vendor/ folders and Salesforce static-resource libraries count as vendored code, and prefixed migration folders under db/ count as migrations, so they leave the score. A tests/ folder inside a JavaScript or TypeScript src tree is product code, so its files are scored. Apex and COBOL files are scored, Scala gets dataflow findings, and comments inside a switch block do not count against its function. Repos with these files can move either way; other repos keep their scores.",
       "tabs": {
         "performance": "Performance",
         "findings": "Findings",
@@ -679,7 +679,7 @@
       "openInOffboarding": "Open in off-boarding",
       "matrixLoadFailed": "The per-file author shares could not be loaded. Check that the API is reachable and try again.",
       "ui": {
-        "agentPrompt": "Copy prompt for your agent",
+        "agentPrompt": "Copy prompt",
         "promptForGroup": "{count, plural, one {Copy prompt for this one} other {Copy prompt for these #}}",
         "repositoryRoot": "(repository root)",
         "hotspot": "Hotspot",
@@ -992,7 +992,7 @@
     "tests": {
       "title": "Tests",
       "description": "Which code your tests reach: measured from a coverage report when one is ingested, inferred from the dependency graph otherwise.",
-      "promptAction": "Copy prompt for your agent",
+      "promptAction": "Copy prompt",
       "cleanTitle": "No untested hotspots across {files} measured files",
       "cleanBody": "Every file that changes often or that much of the code depends on has tests watching it.",
       "batchPromptAction": "Copy prompt for these {count}",
@@ -1269,7 +1269,11 @@
       "agentAuthored": "Agent-authored",
       "renamedFrom": "Renamed from",
       "historyCapped": "History capped during indexing, so older commits are not counted above.",
-      "signals": "Signals"
+      "signals": "Signals",
+      "freshness": {
+        "stale": "May be out of date",
+        "outdated": "Out of date"
+      }
     },
     "explorer": {
       "emptyTitle": "No documentation yet",
@@ -1277,10 +1281,19 @@
       "hideTree": "Hide pages tree",
       "showTree": "Show pages tree",
       "askQuestion": "Explain \"{title}\" using the source code, and name the files it rests on.",
-      "askLabel": "Ask about {title}"
+      "askLabel": "Ask about {title}",
+      "more": "More",
+      "menu": {
+        "exportPage": "Export this page (Markdown)",
+        "exportAll": "Export all pages (Markdown)",
+        "exportZip": "Download ZIP archive",
+        "present": "Present",
+        "readerLevel": "Reader level"
+      }
     },
     "bulk": {
-      "button": "Write subsystem pages",
+      "button": "Write {count, plural, one {# page} other {# pages}} with AI",
+      "buttonShort": "Write with AI",
       "title": "Write the subsystem pages",
       "writing": "Writing the subsystem pages"
     },
@@ -1290,7 +1303,9 @@
       "writeWithAi": "Write with AI"
     },
     "pageGenerate": {
-      "failed": "Couldn't start generation"
+      "failed": "Couldn't start generation",
+      "write": "Write this page with AI",
+      "rewrite": "Rewrite with AI"
     }
   },
   "zoom": {
@@ -1474,29 +1489,30 @@
       "connect": "Connect",
       "connecting": "Connecting",
       "connectFailed": "Couldn't connect {name}",
-      "copyPrompt": "Copy setup prompt",
-      "promptCopied": "Setup prompt copied",
+      "copyPrompt": "Copy prompt",
       "prompt": "Connect repowise to {name} for this repo. Run `{command}` in the repo root, then restart {name} so it loads the repowise tools. Run `repowise doctor` to check the connection.",
+      "listLabel": "Agents on this machine",
+      "moreAgents": "{count, plural, one {# more agent} other {# more agents}} found. Setup lists them all.",
       "askLabel": "Ask it something",
       "askRisk": "Which files are riskiest to change, and why?",
       "askHotspot": "Why does {path} change so often?",
       "askStart": "Where should I start reading this repo?",
       "copy": "Copy",
       "copied": "Copied",
+      "copyFailed": "Couldn't copy",
       "copyQuestion": "Copy: {question}"
     },
     "yours": {
       "title": "Make it <em>yours</em>",
-      "lede": "Both are optional. You can change them any time in Settings.",
-      "modelTitle": "Add a model for the parts that need one",
-      "optional": "Optional",
+      "lede": "Every part is optional. Change any of it later in Settings.",
+      "modelTitle": "Add a model where it helps",
       "gets": {
         "docs": "Docs that explain how and why",
         "chat": "Chat in this dashboard",
         "answers": "Written answers for your agent",
         "local": "Your key or sign-in stays here"
       },
-      "detectedLabel": "Found on this machine",
+      "detected": "Found on this machine: {names}.",
       "syncTitle": "Keep the index in sync",
       "syncBody": "Updates after each commit through a git hook.",
       "syncFailed": "Couldn't change sync",
@@ -1554,7 +1570,7 @@
       "fixPromptLabel": "Copy prompt to fix what this commit made worse",
       "fixPromptTitle": "Fix what this commit made worse",
       "fixPromptDescription": "A ready-to-paste prompt that has your AI agent fix the findings this commit introduced or made more severe, at their files and lines, without undoing the commit.",
-      "reviewPromptLabel": "Copy review prompt for your agent",
+      "reviewPromptLabel": "Copy review prompt",
       "reviewPromptTitle": "AI commit review",
       "reviewPromptDescription": "A ready-to-paste prompt that has your AI agent review this commit's change-risk, flag what to scrutinize, and suggest reviewers.",
       "openFile": "Open file"
@@ -1578,7 +1594,7 @@
       "lastTogether": "last {date}",
       "unexplained": "{count, plural, one {# file pair} other {# file pairs}} with no direct import ({pct}%)",
       "allExplained": "All explained",
-      "promptLabel": "Copy prompt for your agent",
+      "promptLabel": "Copy prompt",
       "bulkPromptLabel": "Copy prompt for these {count, number}",
       "promptTitle": "Decouple prompt",
       "promptDescription": "A ready-to-paste prompt asking your agent to find why these areas change together with no dependency between them, and to decouple what is accidental.",
@@ -1742,7 +1758,7 @@
     "promptDescription": "A ready-to-paste prompt that walks your AI agent through confirming and remediating this security finding.",
     "rescan": "Re-scan",
     "rescanning": "Re-scanning…",
-    "promptAction": "Copy prompt for your agent",
+    "promptAction": "Copy prompt",
     "deadCodeClean": {
       "title": "No dead code found",
       "titleScoped": "No dead code across {files} files",
@@ -2344,12 +2360,14 @@
     "essentials": "Essentials",
     "optional": "Optional",
     "tour": "Take the tour",
-    "copyPrompt": "Copy prompt for your agent",
+    "copyPrompt": "Copy prompt",
     "promptDescription": "Hand this to your coding agent. It names the command and how to check the result.",
-    "promptPreview": "Prompt preview",
-    "copied": "copied",
+    "copied": "Copied",
+    "copyFailed": "Couldn't copy",
     "showFiles": "Show files",
     "hideFiles": "Hide files",
+    "showDetails": "Show details",
+    "hideDetails": "Hide details",
     "connect": "Connect {agent}",
     "disconnect": "Disconnect",
     "disconnectAgent": "Disconnect {agent}",

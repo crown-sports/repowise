@@ -381,9 +381,11 @@ class CallSite:
     # COBOL ``CALL`` / ``LINK`` / ``XCTL``: names a PROGRAM-ID, never a paragraph.
     program_call: bool = False
     # Java: each argument's type where it is a literal (``"String"``, ``"int"``,
-    # ``"null"``), else None; None overall when no argument is one.
+    # ``"null"``), a class literal (``"Class"``), a String concatenation or a
+    # lambda (``"->0:value"``), else None; None overall when no argument is one.
+    # C# writes a lambda's or a construction's shape here (``"=>2"``, ``"new Foo"``).
     argument_types: tuple[str | None, ...] | None = None
-    # Java: each argument that is a bare name (``start``), else None; None overall
+    # Java and C#: each argument that is a bare name (``start``), else None; None overall
     # when no argument is one. The resolver reads its declared type.
     argument_names: tuple[str | None, ...] | None = None
 
@@ -797,6 +799,9 @@ class ParsedFile:
     references: list[CallSite] = field(default_factory=list)
     # Salesforce objects and fields this file names (see ``salesforce_schema``).
     schema_refs: list[SchemaReference] = field(default_factory=list)
+    # Parsed without its language's grammar (not installed, or a download
+    # failed): a stand-in the parse cache must not keep once the grammar loads.
+    grammar_missing: bool = False
 
     @property
     def symbol_count(self) -> int:
