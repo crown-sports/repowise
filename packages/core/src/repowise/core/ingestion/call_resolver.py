@@ -1680,10 +1680,9 @@ class CallResolver(
                 return True, None  # this scope rebinds it to an unread value
             target = self._python_nested.get((scope_id, call.target_name))
             if target is not None:
-                return True, (
-                    None if target == caller_id else
-                    ResolvedCall(caller_id, target, 0.95, call.line, "same_file")
-                )
+                if target == caller_id and not self._is_bare_recursion(file_path, call, caller_id):
+                    return True, None
+                return True, ResolvedCall(caller_id, target, 0.95, call.line, "same_file")
             if not is_nested_function(scope):
                 break
             scope_id = f"{file_path}::{scope.parent_name}"

@@ -72,7 +72,7 @@ def second():
     }
 
 
-def test_nested_functions_keep_full_ancestry_and_recursion_is_not_an_edge(tmp_path):
+def test_nested_functions_keep_full_ancestry_and_recursive_self_edges(tmp_path):
     parsed = _parse(tmp_path, '''def outer():
     def helper():
         return helper()
@@ -86,10 +86,60 @@ def test_nested_functions_keep_full_ancestry_and_recursion_is_not_an_edge(tmp_pa
     assert inner.id == "sample.py::outer::middle::inner"
     assert inner.is_async
     assert _edges(tmp_path, parsed) == {
+        ("sample.py::outer::helper", "sample.py::outer::helper"),
         (inner.id, "sample.py::outer::helper"),
         ("sample.py::outer::middle", inner.id),
         ("sample.py::outer", "sample.py::outer::middle"),
     }
+
+
+@pytest.mark.parametrize("body", [
+    "from external import helper\n        return helper(n)",
+    "helper = unknown\n        return helper(n)",
+    "return factory().helper(n)",
+])
+def test_a_nested_namesake_without_proven_recursion_draws_no_edge(tmp_path, body):
+    parsed = _parse(tmp_path, f'''def helper(n):
+    return n
+def outer():
+    def helper(n):
+        {body}
+    return helper
+''')
+    assert _edges(tmp_path, parsed) == set()
+
+
+def test_a_nested_functions_own_name_parameter_is_not_recursion(tmp_path):
+    parsed = _parse(tmp_path, '''def outer():
+    def helper(helper):
+        return helper()
+    return helper
+''')
+    assert _edges(tmp_path, parsed) == set()
+
+
+def test_a_childs_parameter_does_not_hide_its_parents_recursion(tmp_path):
+    parsed = _parse(tmp_path, '''def outer():
+    def helper(n):
+        def child(helper):
+            return helper()
+        return helper(n - 1) if n else 0
+    return helper
+''')
+    assert _edges(tmp_path, parsed) == {
+        ("sample.py::outer::helper", "sample.py::outer::helper"),
+    }
+
+
+def test_a_nested_recursive_name_with_two_definitions_is_ambiguous(tmp_path):
+    parsed = _parse(tmp_path, '''def outer():
+    def helper(n):
+        return helper(n - 1) if n else 0
+    def helper(n):
+        return n
+    return helper
+''')
+    assert _edges(tmp_path, parsed) == set()
 
 
 def test_closure_inside_method_is_not_itself_a_method(tmp_path):

@@ -136,7 +136,7 @@ _T = TypeVar("_T", bound=tuple)
 
 
 class _Scope(NamedTuple):
-    """What one symbol's span binds, less the symbol's own name."""
+    """What one symbol's span binds, including a Python closure's own rebinding."""
 
     first_bound: dict[str, int]  # name -> first line a positional binding binds it
     hoisted: frozenset[str]
@@ -153,7 +153,9 @@ def _scope_of(symbol: Symbol, bindings: tuple[tuple[int, str], ...], marks: Scop
     start, end, own = symbol.start_line, symbol.end_line, symbol.name
     first_bound: dict[str, int] = {}
     for line, name in _in_lines(bindings, start, end):
-        if name != own:
+        # A closure's name is defined in its parent, so an own-name parameter
+        # or assignment here shadows that binding rather than declaring it.
+        if name != own or is_nested_function(symbol):
             first_bound.setdefault(name, line)
     return _Scope(
         first_bound,
