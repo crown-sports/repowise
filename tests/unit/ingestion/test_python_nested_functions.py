@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from repowise.core.analysis.public_api import public_symbols
 from repowise.core.ingestion.call_resolver import CallResolver
 from repowise.core.ingestion.graph import GraphBuilder
 from repowise.core.ingestion.models import FileInfo
@@ -278,3 +279,44 @@ def test_local_class_and_javascript_callback_symbols_stay_unchanged(tmp_path):
     javascript = _parse(tmp_path, "function outer() { function inner() { target(); } inner(); }",
                         "sample.js", "javascript")
     assert [s.name for s in javascript.symbols] == ["outer"]
+
+
+def test_lexical_parents_do_not_publish_closures_or_make_them_class_members(tmp_path):
+    parsed = _parse(tmp_path, '''def factory():
+    def helper():
+        return 1
+    return helper
+
+class Worker:
+    def run(self):
+        def callback():
+            return self.save()
+        return callback
+    def save(self):
+        return 1
+''', "__init__.py")
+    path = parsed.file_info.path
+    published = public_symbols({path: parsed})
+    assert set(published) == {
+        "__init__.py::factory", "__init__.py::Worker",
+        "__init__.py::Worker::run", "__init__.py::Worker::save",
+    }
+    assert "helper" not in parsed.exports
+    assert "callback" not in parsed.exports
+
+    builder = GraphBuilder(tmp_path)
+    builder.add_file(parsed)
+    graph = builder.build()
+    callback = "__init__.py::Worker::run::callback"
+    assert graph.nodes[callback]["parent_name"] == "Worker::run"
+    assert graph.nodes[callback]["kind"] == "function"
+    assert graph.nodes[callback]["visibility"] == "private"
+    assert {
+        (source, target)
+        for source, target, data in graph.edges(data=True)
+        if data.get("edge_type") == "has_method"
+    } == {
+        ("__init__.py::Worker", "__init__.py::Worker::run"),
+        ("__init__.py::Worker", "__init__.py::Worker::save"),
+    }
+    assert graph.edges[callback, "__init__.py::Worker::save"]["edge_type"] == "calls"

@@ -2127,6 +2127,7 @@ class CallResolver(
                 return True, self._body_typed_call(caller_id, *found, call.line) if found else None
             scope_id = f"{file_path}::{symbol.parent_name}"
         return False, None
+
     def _bodiless_callee_named(self, file_path: str, method_name: str) -> bool:
         """Whether a bodiless method ``_global_symbols`` leaves out can be the callee.
 
