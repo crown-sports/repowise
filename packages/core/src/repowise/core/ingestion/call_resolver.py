@@ -1,9 +1,13 @@
-"""Three-tier call resolution engine for the symbol-level dependency graph.
+"""Scope-aware call resolution for the symbol-level dependency graph.
 
 Resolves CallSite objects (extracted from AST) to concrete symbol node IDs
 in the graph, producing CALLS edges with confidence scores.
 
-Resolution tiers (checked in order, first match wins):
+Python lexical-function lookup precedes the headline tiers below. Names bound
+by local scopes can refuse broader lookup rather than falling through to a
+same-named symbol elsewhere.
+
+Headline resolution tiers (checked in order, first match wins):
 
     Tier 1 — Same-file exact match (confidence 0.95)
         The call target matches a symbol defined in the same file.
@@ -557,9 +561,8 @@ class CallResolver(
         for sym in parsed.symbols:
             # An overload set is indexed once, under its representative.
             index_id = representatives.get(sym.id, sym.id)
-            if is_nested_function(sym):
-                self._python_nested[(f"{path}::{sym.parent_name}", sym.name)] = index_id
-                self._record_callability(index_id, False)
+            if self._index_python_nested(path, sym, index_id):
+                # Lexical closures must stay out of the file, class and global indexes.
                 continue
             decl_key = (sym.parent_name, sym.name)
             if sym.is_declaration:
@@ -618,6 +621,14 @@ class CallResolver(
         self._file_symbols[path] = file_syms
         self._file_top_level[path] = top_level
         self._file_methods[path] = file_methods
+
+    def _index_python_nested(self, path: str, sym: Symbol, index_id: str) -> bool:
+        """Index a Python closure by lexical owner, returning whether it was handled."""
+        if not is_nested_function(sym):
+            return False
+        self._python_nested[(f"{path}::{sym.parent_name}", sym.name)] = index_id
+        self._record_callability(index_id, False)
+        return True
 
     def _csharp_extended_type(self, sym: Symbol) -> str | None:
         """The repository C# type *sym* extends, when it is an extension method."""
