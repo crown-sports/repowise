@@ -39,6 +39,7 @@ from .call_barrel_forwarding import (  # noqa: F401
     _renames_on_the_way,
 )
 from .call_cobol import CobolCallsMixin
+from .call_cpp_class_scope import CppClassScopeMixin
 from .call_inheritance import (  # noqa: F401
     _EXTERNAL_PREFIX,
     _MAX_ANCESTOR_EXPAND_DEPTH,
@@ -302,6 +303,7 @@ class CallResolver(
     OverloadSelectionMixin,
     BarrelForwardingMixin,
     InheritanceMixin,
+    CppClassScopeMixin,
 ):
     """Resolve raw CallSites to symbol-level edges.
 
@@ -343,6 +345,9 @@ class CallResolver(
             else return_type_chain_languages
         )
         self._ancestors: dict[str, tuple[str, ...]] = {}
+        # C++: {file: files its includes reach}, {class id: template parameter names}.
+        self._cpp_include_closures: dict[str, frozenset[str]] = {}
+        self._cpp_template_names: dict[str, frozenset[str]] = {}
         self._mros: dict[str, tuple[str, ...] | None] = {}
         # {type name: [(file, identity, arity)]}, filled by ``_declared_types_named``.
         self._declared_types: dict[str, list[tuple[str, tuple[str, ...], int]]] = {}
@@ -1051,6 +1056,10 @@ class CallResolver(
             return self._with_props(hit, call)
         if receiver_call is not None and not (bare_fallback and strategies.chain_bare_fallback):
             return None
+        if call.on_unnamed_object:
+            # A call on an object no pattern names: a tier keyed on the
+            # caller's file, class or imports would read the method as theirs.
+            return self._with_props(self._global_unique_call(file_path, call, caller_id), call)
 
         # --- Free function call: function() ---
         return self._with_props(self._resolve_bare_call(file_path, call, caller_id), call)
@@ -1487,18 +1496,18 @@ class CallResolver(
         as its own site on the chain's first line, so the hop below is read
         off the site *inner* names. Apex, C#, Dart, Go, Java and Kotlin read it, so a
         builder chain types each link from the one before; elsewhere an inner call
-        is still typed as if nothing were chained under it.
+        is still typed as if nothing were chained under it. A name repeated in
+        one chain (``a().b().b()``) keeps its first link, the innermost.
         """
         if language not in ("apex", "csharp", "dart", "go", "java", "kotlin"):
             return None
         sites = self._chained_sites.get(file_path)
         if sites is None:
             parsed = self._parsed_files.get(file_path)
-            sites = {
-                (c.line, c.receiver_name, c.target_name): c.receiver_call
-                for c in (parsed.calls if parsed else ())
-                if c.receiver_call is not None
-            }
+            sites = {}
+            for c in parsed.calls if parsed else ():
+                if c.receiver_call is not None:
+                    sites.setdefault((c.line, c.receiver_name, c.target_name), c.receiver_call)
             _store_capped(self._chained_sites, file_path, sites, _SOURCE_CACHE_FILES)
         return sites.get((line, inner.receiver_name, inner.target_name))
 
@@ -1611,6 +1620,13 @@ class CallResolver(
         # A parameter or local of that name hides every tier below.
         if self._shadowed_by_local(file_path, call, caller_id):
             return None
+        # A C++ class member hides a same-named function, so the caller's class
+        # and its bases answer ahead of the flat same-file table. A qualified
+        # ``ns::f()`` names its scope, not the caller's class.
+        if not call.receiver_name and not call.scope_name:
+            own = self._cpp_class_member_call(file_path, call, caller_id, bare=True)
+            if own is not None:
+                return own
 
         # Tier 1: same-file
         handled, resolved = self._same_file_free_call(file_path, call, caller_id)
@@ -1925,7 +1941,6 @@ class CallResolver(
         caller_id: str,
     ) -> ResolvedCall | None:
         """Tier 3 and what follows it: answers not grounded in this file or its imports."""
-        target_name = call.target_name
         # Ahead of tier 3: the caller's own hierarchy is better evidence than
         # repo-wide uniqueness, and a JVM package sibling's member never answers.
         inherited = self._implicit_inherited_call(file_path, call, caller_id)
@@ -1936,7 +1951,16 @@ class CallResolver(
         )
         if hit is not None:
             return hit
-        # Tier 3: global unique match, only within the same language.
+        return self._global_unique_call(file_path, call, caller_id)
+
+    def _global_unique_call(
+        self,
+        file_path: str,
+        call: CallSite,
+        caller_id: str,
+    ) -> ResolvedCall | None:
+        """Tier 3: the one declaration of the name repo-wide, only within the same language."""
+        target_name = call.target_name
         # Uniqueness is judged before filtering data members, on purpose: filtering
         # them out first would re-uniquify a name a field and a method share. A
         # symbol the caller cannot name at all is no rival, so that one is dropped.
@@ -2314,6 +2338,10 @@ class CallResolver(
         """
         if call.receiver_name not in ("self", "this"):
             return None
+        if self._language_of(file_path) == "cpp":
+            if call.receiver_name != "this":
+                return None
+            return self._cpp_class_member_call(file_path, call, caller_id, bare=False)
         if self._language_of(file_path) not in _INHERITED_LANGUAGES:
             return None
         sym_id = self._inherited_method(caller_id, call.target_name)

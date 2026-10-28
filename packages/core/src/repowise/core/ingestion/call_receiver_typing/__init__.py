@@ -21,6 +21,7 @@ from ..languages.receiver_types import (
     IMPLICIT_FIELD_LANGUAGES,
     RANGE_LANGUAGES,
     RECEIVER_TYPE_LANGUAGES,
+    STRING_LITERAL_TYPE,
     CallAssignment,
     DartCallback,
     Declaration,
@@ -42,7 +43,7 @@ from ..languages.receiver_types import (
     types_in_span,
     unwrapped_names_in_span,
 )
-from ..models import CallSite, NamedBinding, ParsedFile, Symbol
+from ..models import STRING_LITERAL_RECEIVER, CallSite, NamedBinding, ParsedFile, Symbol
 from ..resolved_call import ResolvedCall
 from ..return_types import declared_return_type, signature_parameter_count
 from ..symbol_identity import id_segment_name
@@ -338,7 +339,8 @@ class ReceiverTypingMixin(
         # tried it, so only a C# one is read further: C# spells its properties
         # and many fields that way. An underscore one cannot be anything but a name.
         head = receiver_name[:1]
-        if not (head.islower() or head == "_" or language == "csharp"):
+        literal = receiver_name == STRING_LITERAL_RECEIVER
+        if not (head.islower() or head == "_" or literal or language == "csharp"):
             return None
 
         # Refuse before reading the file: nothing resolves unless some class
@@ -554,6 +556,8 @@ class ReceiverTypingMixin(
         neither types nor binds is asked of the function around it, whose
         locals it captures and whose class fields it sees.
         """
+        if receiver_name == STRING_LITERAL_RECEIVER:
+            return STRING_LITERAL_TYPE, "body", file_path
         if line is not None and language == "dart":
             bound, closure_type = self._callback_parameter(
                 file_path, caller_id, language, receiver_name, line
@@ -1652,11 +1656,12 @@ class ReceiverTypingMixin(
         sites = self._call_sites.get(file_path)
         if sites is None:
             parsed = self._parsed_files.get(file_path)
-            sites = {
-                (c.line, c.receiver_name, c.target_name): c
-                for c in (parsed.calls if parsed else ())
-                if c.caller_symbol_id and c.receiver_call is None
-            }
+            sites = {}
+            # The first of same-named calls on a line is the outer one, the
+            # call an assignment holds: ``x = f(a, f(b))``.
+            for c in parsed.calls if parsed else ():
+                if c.caller_symbol_id and c.receiver_call is None:
+                    sites.setdefault((c.line, c.receiver_name, c.target_name), c)
             _store_capped(self._call_sites, file_path, sites, _SOURCE_CACHE_FILES)
         return sites
 
