@@ -148,7 +148,7 @@ def test_fingerprint_mismatch_invalidates(repo, tmp_path):
 
 
 
-def test_v10_cache_reparses_python_closures_with_their_own_callers(repo, monkeypatch):
+def test_v11_cache_reparses_python_closures_with_their_own_callers(repo, monkeypatch):
     """Updating must not keep a pre-closure ParsedFile for unchanged bytes."""
     from dataclasses import replace
 
@@ -167,7 +167,7 @@ def test_v10_cache_reparses_python_closures_with_their_own_callers(repo, monkeyp
     ]
     try:
         with monkeypatch.context() as previous_version:
-            previous_version.setattr(version, "PARSER_SCHEMA_VERSION", 10)
+            previous_version.setattr(version, "PARSER_SCHEMA_VERSION", 11)
             parser_fingerprint.cache_clear()
             cache = ParseCache(repo / ".repowise")
             cache.put(old, compute_content_hash(source))
